@@ -23,6 +23,7 @@ Because it works on the **rendered output**, the source stack is irrelevant: Wor
 | **Asset engine** | Downloads images, CSS, JS, fonts, video/audio, favicons, manifests and OG images — including nested `url()` references inside stylesheets. Optionally converts JPEG/PNG to WebP. |
 | **Link transformation** | Rewrites `src`, `href`, `srcset`, `data-src`, `poster`, `content` and CSS `url()` to relative offline paths. Inline `data:` URIs are left byte-for-byte intact. |
 | **Archive** | Streams the tree into a `.zip` with a `staticsnap-manifest.json` recording source URLs, files, byte counts and failure tallies. |
+| **Screenshots** *(optional)* | Renders every harvested page in headless Chromium at the selected device widths (Desktop 1280px, Tablet 768px, Mobile 390px) and packs the PNGs — in individual per-viewport folders — into a **separate** screenshots `.zip`. Runs after the site bundle, which stays downloadable meanwhile; a capture failure only warns, never fails the export. |
 
 Live telemetry streams over SSE: staged progress, per-asset operations, and a terminal with `INFO`/`SUCCESS`/`WARN`/`ERROR` lines. Every job also writes a durable log file that outlives both the artifacts and a server restart.
 
@@ -32,6 +33,8 @@ Live telemetry streams over SSE: staged progress, per-asset operations, and a te
 - **Deep crawl** — every page in the sitemap (up to 120), plus assets.
 
 External/CDN assets stay remote by default; enable *Download external CDN assets* to inline them.
+
+Tick any of the Desktop / Tablet / Mobile screenshot boxes to also capture every harvested page at those widths. Captures run in the background once the site bundle is ready and download from their own button as `<domain>-screenshots.zip` (`desktop/`, `tablet/`, `mobile/` folders plus a `screenshots-manifest.json`). Requires the server to have Playwright's Chromium (`npx playwright install chromium`, already wired into the `Dockerfile`); without it the export still succeeds and the screenshots phase just warns.
 
 ---
 
@@ -78,6 +81,9 @@ Serverless platforms are a poor fit either way: a deep crawl runs for minutes, h
 | `STATICSNAP_MAX_JOB_BYTES` | `2 GiB` | Per-export size ceiling |
 | `STATICSNAP_MAX_TOTAL_BYTES` | `10 GiB` | Refuse new jobs beyond this much retained disk |
 | `STATICSNAP_ALLOW_PRIVATE` | unset | **Dev only.** Permits crawling private/loopback addresses |
+| `STATICSNAP_SCREENSHOT_TIMEOUT_MS` | `30000` | Per-page navigation + capture budget for screenshots |
+| `STATICSNAP_SCREENSHOT_CONCURRENCY` | `2` | Concurrent screenshot pages |
+| `STATICSNAP_MAX_SCREENSHOTS` | `360` | Cap on captures per job (pages × viewports) |
 
 ### Access control
 
@@ -121,11 +127,12 @@ Still worth adding for a sensitive network: an egress allowlist, so the crawler 
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/jobs` | `{ url, scope: "landing" \| "deep", convertWebp?, downloadExternal? }` → `{ jobId }` |
-| `GET /api/stream/:jobId` | SSE telemetry — stage, progress, metrics, log entries |
+| `POST /api/jobs` | `{ url, scope: "landing" \| "deep", convertWebp?, downloadExternal?, screenshotViewports?: ("desktop" \| "tablet" \| "mobile")[] }` → `{ jobId }` (`screenshots: true` is shorthand for desktop-only) |
+| `GET /api/stream/:jobId` | SSE telemetry — stage, progress, metrics, log entries, screenshots state |
 | `GET /api/jobs/:jobId` | Full job state (polling fallback) |
 | `GET /api/jobs/:jobId/log` | Durable plain-text job log |
-| `GET /api/download/:jobId` | The `.zip` bundle |
+| `GET /api/download/:jobId` | The `.zip` bundle (live as soon as packed, even while screenshots render) |
+| `GET /api/download/:jobId/screenshots` | The separate screenshots `.zip` (404 if not requested, 409 while rendering) |
 | `GET /api/health` | Liveness |
 
 ---
@@ -142,6 +149,7 @@ npm test              # unit + fidelity + e2e
 - `tests/srcset.test.mjs` — `srcset`/data-URI parsing
 - `tests/terminal.test.mjs` — dashboard log rendering (runs the shipped source)
 - `tests/offline-fidelity.test.mjs` — exports a site, **kills the origin**, then serves the unzipped bundle and asserts every page and reference still resolves
+- `tests/screenshots.test.mjs` — screenshot viewport helpers plus the screenshots API surface (no browser required)
 - `tests/e2e.mjs` — the bundled `wp-to-astro` CLI, including an `astro build` of its output
 
 ---
