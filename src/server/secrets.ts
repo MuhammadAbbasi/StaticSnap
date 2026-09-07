@@ -82,7 +82,7 @@ const RULES: Rule[] = [
     type: "Google API key",
     severity: "high",
     recommendation: "Restrict the key by HTTP referrer/API in Google Cloud Console, then rotate it.",
-    pattern: /\bAIza[0-9A-Za-z_-]{35}\b/g,
+    pattern: /\bAIza[0-9A-Za-z_-]{35,}\b/g,
   },
   {
     type: "Stripe live secret key",
@@ -195,7 +195,7 @@ function scrubContext(fragment: string): string {
   // Private-key headers carry no secret payload — drop them from context.
   out = out.replace(/-----BEGIN (?:RSA )?PRIVATE KEY-----/g, "-----BEGIN PRIVATE KEY-----");
   out = out.replace(/\bAKIA[0-9A-Z]{16}\b/g, (m) => redactSecret(m));
-  out = out.replace(/\bAIza[0-9A-Za-z_-]{35}\b/g, (m) => redactSecret(m));
+  out = out.replace(/\bAIza[0-9A-Za-z_-]{35,}\b/g, (m) => redactSecret(m));
   out = out.replace(/\bsk_(?:live|test)_[0-9A-Za-z]{16,}\b/g, (m) => redactSecret(m));
   out = out.replace(/\b(?:ghp_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9]{36,}\b/g, (m) => redactSecret(m));
   out = out.replace(/\bgithub_pat_[A-Za-z0-9_]{22,}\b/g, (m) => redactSecret(m));
