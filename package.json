@@ -1,7 +1,7 @@
 {
   "name": "wp-to-astro",
   "version": "0.1.0",
-  "description": "StaticSnap \u2014 Instant Web-to-Static Replatformer. Clone any website into a self-contained static .zip via a real-time dashboard (Express + SSE + archiver). Includes the wp-to-astro CLI.",
+  "description": "StaticSnap — Instant Web-to-Static Replatformer. Clone any website into a self-contained static .zip via a real-time dashboard (Express + SSE + archiver). Includes the wp-to-astro CLI.",
   "type": "module",
   "bin": {
     "wp-to-astro": "./dist/cli.js"
@@ -15,9 +15,10 @@
     "typecheck": "tsc --noEmit",
     "start": "node ./dist/cli.js",
     "test:e2e": "node ./tests/e2e.mjs",
-    "test:unit": "node ./tests/srcset.test.mjs && node ./tests/terminal.test.mjs && node ./tests/ssrf.test.mjs && node ./tests/limits.test.mjs",
+    "test:unit": "node ./tests/srcset.test.mjs && node ./tests/terminal.test.mjs && node ./tests/ssrf.test.mjs && node ./tests/limits.test.mjs && node ./tests/screenshots.test.mjs && node ./tests/secrets.test.mjs",
     "test": "npm run test:unit && npm run test:fidelity && npm run test:e2e",
-    "test:fidelity": "node ./tests/offline-fidelity.test.mjs"
+    "test:fidelity": "node ./tests/offline-fidelity.test.mjs",
+    "test:screenshots": "node ./tests/screenshots.test.mjs"
   },
   "keywords": [
     "wordpress",
@@ -41,6 +42,7 @@
     "gray-matter": "^4.0.3",
     "p-limit": "^7.3.2",
     "picocolors": "^1.1.1",
+    "playwright": "^1.63.0",
     "sharp": "^0.35.4",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",

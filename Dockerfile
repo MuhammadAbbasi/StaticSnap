@@ -30,6 +30,15 @@ ENV NODE_ENV=production \
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
+# Headless Chromium for the optional page-screenshots stage. Installed to a
+# fixed path owned by the runtime user; when it is absent (e.g. a minimal
+# install) screenshot jobs degrade to a WARN instead of failing the export.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npx playwright install --with-deps chromium \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /ms-playwright \
+  && chown -R node:node /ms-playwright
+
 COPY --from=build /app/dist ./dist
 
 # Crawl artifacts land in the OS temp dir and are reaped 15 minutes after a

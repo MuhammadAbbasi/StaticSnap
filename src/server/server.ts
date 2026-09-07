@@ -7,6 +7,8 @@ import cors from "cors";
 import { z } from "zod";
 import { jobManager, LOG_DIR, sweepOrphanedBundles } from "./jobManager.js";
 import { runStaticSnapJob } from "./crawler.js";
+import { resolveScreenshotViewports } from "./screenshots.js";
+import { isProEnabled, isSecretScanAvailable, SECRET_SCAN_UPGRADE_MESSAGE } from "./entitlements.js";
 import { assertPublicUrl, BlockedTargetError } from "../net-guard.js";
 
 /**
@@ -99,6 +101,9 @@ const CreateJobSchema = z.object({
   convertWebp: z.boolean().optional(),
   optimizeImages: z.boolean().optional(),
   downloadExternal: z.boolean().optional(),
+  screenshotViewports: z.array(z.enum(["desktop", "tablet", "mobile"])).optional(),
+  screenshots: z.boolean().optional(),
+  secretScan: z.boolean().optional(),
 });
 
 export function createApp(): express.Express {
@@ -114,6 +119,8 @@ export function createApp(): express.Express {
       service: "staticsnap",
       time: new Date().toISOString(),
       tokenRequired: ACCESS_TOKEN.length > 0,
+      pro: isProEnabled(),
+      features: { secretScan: isSecretScanAvailable() },
     });
   });
 
@@ -168,6 +175,13 @@ export function createApp(): express.Express {
       return;
     }
 
+    // Pro-gated capability: fail fast before any crawling happens.
+    const secretScan = parsed.data.secretScan ?? false;
+    if (secretScan && !isSecretScanAvailable()) {
+      res.status(402).json({ error: SECRET_SCAN_UPGRADE_MESSAGE, upgradeRequired: true });
+      return;
+    }
+
     // Vet the target before creating a job, so an unreachable or blocked host
     // is a clear 400 at submit time rather than a job that fails seconds later.
     try {
@@ -181,11 +195,17 @@ export function createApp(): express.Express {
     }
 
     const convertWebp = parsed.data.convertWebp ?? parsed.data.optimizeImages ?? true;
+    const screenshotViewports = resolveScreenshotViewports({
+      screenshotViewports: parsed.data.screenshotViewports,
+      screenshots: parsed.data.screenshots,
+    });
     const job = jobManager.create({
       url: target.toString(),
       scope: parsed.data.scope,
       convertWebp,
       downloadExternal: parsed.data.downloadExternal ?? false,
+      screenshotViewports,
+      secretScan,
     });
 
     jobManager.log(job.id, "INFO", `Job ${job.id} queued for ${target.toString()}`);
@@ -207,14 +227,28 @@ export function createApp(): express.Express {
       return;
     }
     // Never leak absolute server paths to the client; expose a URL instead.
-    const { outDir: _outDir, zipPath: _zipPath, logPath: _logPath, ...rest } = detail;
+    const {
+      outDir: _outDir,
+      zipPath: _zipPath,
+      logPath: _logPath,
+      screenshotsDir: _screenshotsDir,
+      screenshotZipPath: _screenshotZipPath,
+      ...rest
+    } = detail;
     void _outDir;
     void _zipPath;
     void _logPath;
+    void _screenshotsDir;
+    void _screenshotZipPath;
     res.json({
       ...rest,
-      downloadUrl: detail.status === "completed" ? `/api/download/${detail.id}` : null,
+      downloadUrl: detail.bundleSize !== null ? `/api/download/${detail.id}` : null,
+      screenshotsDownloadUrl:
+        detail.screenshotsStatus === "completed"
+          ? `/api/download/${detail.id}/screenshots`
+          : null,
       logUrl: `/api/jobs/${detail.id}/log`,
+      secretsUrl: detail.secretsStatus !== "disabled" ? `/api/jobs/${detail.id}/secrets` : null,
     });
   });
 
@@ -247,6 +281,46 @@ export function createApp(): express.Express {
       }
     });
     stream.pipe(res);
+  });
+
+  /**
+   * GET /api/jobs/:jobId/secrets — redacted secret-exposure report (Pro).
+   *
+   * Findings are redacted at scan time (`AKIA***…`), so this payload is safe
+   * to render, store and download. 404 when the scan was not requested,
+   * 409 while it is still running, 402 when the deployment is not Pro.
+   */
+  app.get("/api/jobs/:jobId/secrets", (req: Request, res: Response) => {
+    const jobId = String(req.params.jobId ?? "");
+    const job = jobManager.get(jobId);
+    if (!job) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+    if (job.secretsStatus === "disabled") {
+      if (!isSecretScanAvailable()) {
+        res.status(402).json({ error: SECRET_SCAN_UPGRADE_MESSAGE, upgradeRequired: true });
+      } else {
+        res.status(404).json({ error: "Secret scan was not requested for this job." });
+      }
+      return;
+    }
+    if (job.secretsStatus === "pending" || job.secretsStatus === "running") {
+      res.status(409).json({ error: "Secret scan is still running. Try again shortly.", status: job.secretsStatus });
+      return;
+    }
+    if (job.secretsStatus === "failed") {
+      res.status(409).json({ error: job.secretsError ?? "Secret scan failed.", status: job.secretsStatus });
+      return;
+    }
+    res.json({
+      jobId: job.id,
+      status: job.secretsStatus,
+      summary: job.secretsSummary,
+      findings: job.secretsFindings,
+      disclaimer:
+        "Heuristic scan of public frontend content (HTML/JS/CSS). Redacted excerpts only — verify each finding, rotate confirmed secrets, and never commit real credentials to frontend code.",
+    });
   });
 
   /**
@@ -304,6 +378,9 @@ export function createApp(): express.Express {
 
   /**
    * GET /api/download/:jobId — stream the generated `.zip` bundle.
+   *
+   * Available as soon as the main bundle is packed, which can be *before* the
+   * job completes when screenshots keep running in the background.
    */
   app.get("/api/download/:jobId", async (req: Request, res: Response) => {
     const jobId = String(req.params.jobId ?? "");
@@ -312,7 +389,11 @@ export function createApp(): express.Express {
       res.status(404).json({ error: "Job not found" });
       return;
     }
-    if (job.status !== "completed") {
+    if (job.status === "failed") {
+      res.status(409).json({ error: `Bundle not ready (status: ${job.status})` });
+      return;
+    }
+    if (job.bundleSize === null) {
       res.status(409).json({ error: `Bundle not ready (status: ${job.status})` });
       return;
     }
@@ -343,6 +424,63 @@ export function createApp(): express.Express {
       const message = error instanceof Error ? error.message : String(error);
       if (!res.headersSent) {
         res.status(500).json({ error: `Failed to read bundle: ${message}` });
+      } else {
+        res.end();
+      }
+    }
+  });
+
+  /**
+   * GET /api/download/:jobId/screenshots — stream the separate screenshots `.zip`.
+   *
+   * Captures run after the main bundle, so this is 404 when screenshots were
+   * not requested, 409 while they are still rendering, and 410 once reaped.
+   */
+  app.get("/api/download/:jobId/screenshots", async (req: Request, res: Response) => {
+    const jobId = String(req.params.jobId ?? "");
+    const job = jobManager.get(jobId);
+    if (!job) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+    if (job.screenshotsStatus === "disabled") {
+      res.status(404).json({ error: "Screenshots were not requested for this job." });
+      return;
+    }
+    if (job.screenshotsStatus === "pending" || job.screenshotsStatus === "running") {
+      res.status(409).json({ error: "Screenshots are still rendering. Try again shortly." });
+      return;
+    }
+    if (job.screenshotsStatus === "failed") {
+      res.status(409).json({ error: job.screenshotsError ?? "Screenshots failed." });
+      return;
+    }
+    if (!job.screenshotZipPath || !(await fs.pathExists(job.screenshotZipPath))) {
+      res.status(410).json({ error: "Screenshots expired and were garbage-collected. Please re-run the export." });
+      return;
+    }
+
+    const filename = `${job.domain}-screenshots.zip`;
+    try {
+      const stat = await fs.stat(job.screenshotZipPath);
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Length", String(stat.size));
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("X-Screenshots-Count", String(job.screenshotsDone));
+      const stream = fs.createReadStream(job.screenshotZipPath);
+      stream.on("error", (error: Error) => {
+        console.error(`[screenshots ${jobId}] stream error:`, error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Failed to stream screenshots bundle" });
+        } else {
+          res.end();
+        }
+      });
+      stream.pipe(res);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: `Failed to read screenshots bundle: ${message}` });
       } else {
         res.end();
       }

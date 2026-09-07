@@ -7,6 +7,20 @@ import pLimit from "p-limit";
 import sharp from "sharp";
 import { jobManager, formatBytes } from "./jobManager.js";
 import { createZip } from "./zipper.js";
+import {
+  buildScreenshotTargets,
+  captureScreenshots,
+  SCREENSHOT_VIEWPORTS,
+} from "./screenshots.js";
+import {
+  MAX_SCAN_BYTES_PER_FILE,
+  mergeFindings,
+  scanTextForSecrets,
+  sensitivePathFinding,
+  summarize,
+  type SecretFinding,
+} from "./secrets.js";
+import { isSecretScanAvailable, SECRET_SCAN_UPGRADE_MESSAGE } from "./entitlements.js";
 import { fetchWithTimeout, type BrowserResponse } from "../fetcher.js";
 import { BlockedTargetError } from "../net-guard.js";
 
@@ -482,7 +496,7 @@ async function execute(jobId: string): Promise<void> {
   jobManager.log(
     jobId,
     "INFO",
-    `Scope=${job.options.scope} webp=${job.options.convertWebp ? "on" : "off"} external=${job.options.downloadExternal ? "local" : "keep-remote"}`,
+    `Scope=${job.options.scope} webp=${job.options.convertWebp ? "on" : "off"} external=${job.options.downloadExternal ? "local" : "keep-remote"} screenshots=${job.options.screenshotViewports.join(",") || "off"}`,
   );
 
   // Verify the target is reachable before doing any heavy work.
@@ -900,7 +914,28 @@ async function execute(jobId: string): Promise<void> {
     jobManager.setProgress(jobId, 72 + Math.round((rewrittenPages / pages.length) * 14));
   }
 
+  /* ---- Stage 5b: Secret Scan (Pro, fast local analysis) ------------ */
+  // Scans the final rewritten files on disk (what will be hosted) — no extra
+  // network requests. Included in the manifest as counts only; full redacted
+  // findings stay in memory served via GET /api/jobs/:id/secrets, never in
+  // the downloadable zip. A scan failure degrades to a WARN, never a job fail.
+  let secretsSummaryForManifest: { filesScanned: number; findings: number; high: number; medium: number; low: number } | null = null;
+  if (job.options.secretScan) {
+    const summary = await runSecretsStage(jobId, pages, downloaded, outDir);
+    if (summary) {
+      secretsSummaryForManifest = {
+        filesScanned: summary.filesScanned,
+        findings: summary.findings,
+        high: summary.high,
+        medium: summary.medium,
+        low: summary.low,
+      };
+    }
+  }
+
   // Manifest for provenance / debugging.
+  // Secrets appear as counts only — never excerpts — so the zip itself does
+  // not become a credential leak if shared.
   await fs.writeFile(
     path.join(outDir, "staticsnap-manifest.json"),
     JSON.stringify(
@@ -914,6 +949,7 @@ async function execute(jobId: string): Promise<void> {
         bytesDownloaded: bytesTotal,
         pagesFailed,
         assetsFailed,
+        secrets: secretsSummaryForManifest,
       },
       null,
       2,
@@ -937,8 +973,239 @@ async function execute(jobId: string): Promise<void> {
   });
 
   jobManager.log(jobId, "SUCCESS", `Archive ready: ${formatBytes(bytes)} (${downloaded.size} assets, ${pages.length} pages)`);
-  jobManager.setProgress(jobId, 100);
+
+  if (job.options.screenshotViewports.length === 0) {
+    jobManager.setProgress(jobId, 100);
+    jobManager.markComplete(jobId, bytes);
+    return;
+  }
+
+  /* ---- Stage 7: Screenshots (background-friendly) ------------------ */
+  // The main bundle is already published via markBundleReady, so it stays
+  // downloadable while captures run. A screenshots failure degrades to a
+  // WARN — it must never fail an otherwise good export.
+  jobManager.markBundleReady(jobId, bytes);
+  jobManager.log(
+    jobId,
+    "INFO",
+    `Main bundle ready — capturing ${pages.length} page(s) in the background (${job.options.screenshotViewports.join(", ")})…`,
+  );
+  await runScreenshotsStage(jobId, pages);
   jobManager.markComplete(jobId, bytes);
+}
+
+/**
+ * Pro-only secret-exposure analysis over files already on disk.
+ *
+ * Scans rewritten page HTML plus downloaded text assets (JS/JSON/CSS) for
+ * leaked credentials. Returns the summary for the manifest, or null when the
+ * scan was skipped/failed. Never throws — failures degrade to a WARN so the
+ * export still completes.
+ */
+const SCANNABLE_EXTS = new Set([".js", ".mjs", ".cjs", ".json", ".html", ".htm", ".css", ".txt", ".xml"]);
+const MAX_SECRETS_FILES = 150;
+
+async function runSecretsStage(
+  jobId: string,
+  pages: PageRecord[],
+  downloaded: Map<string, AssetRecord>,
+  outDir: string,
+): Promise<{ filesScanned: number; findings: number; high: number; medium: number; low: number } | null> {
+  const job = jobManager.get(jobId);
+  if (!job) return null;
+  if (!isSecretScanAvailable()) {
+    jobManager.markSecretsFailed(jobId, SECRET_SCAN_UPGRADE_MESSAGE);
+    jobManager.log(jobId, "WARN", `Secret scan skipped — Pro required. ${SECRET_SCAN_UPGRADE_MESSAGE}`);
+    return null;
+  }
+
+  jobManager.setStage(jobId, "secrets", "Scanning for exposed secrets…");
+  jobManager.markSecretsRunning(jobId);
+  jobManager.log(jobId, "INFO", "Secret scan (Pro): checking pages + scripts for exposed keys and passwords…");
+  try {
+    const perFile: SecretFinding[][] = [];
+    let bytesScanned = 0;
+
+    // 1. Rewritten page HTML on disk (what will actually be hosted).
+    for (const page of pages) {
+      try {
+        const abs = path.join(outDir, page.file);
+        const stat = await fs.stat(abs).catch(() => null);
+        if (!stat || !stat.isFile() || stat.size > MAX_SCAN_BYTES_PER_FILE) continue;
+        const text = await fs.readFile(abs, "utf8");
+        bytesScanned += Math.min(text.length, MAX_SCAN_BYTES_PER_FILE);
+        const hits = scanTextForSecrets(text, page.file);
+        if (hits.length > 0) perFile.push(hits);
+        const pathHit = sensitivePathFinding(page.file);
+        if (pathHit) perFile.push([pathHit]);
+      } catch {
+        // One unreadable page never sinks the scan.
+      }
+      if (perFile.length >= MAX_SECRETS_FILES) break;
+    }
+
+    // 2. Downloaded text assets — JS bundles are where keys usually hide.
+    let assetCount = 0;
+    for (const record of downloaded.values()) {
+      if (assetCount >= MAX_SECRETS_FILES) break;
+      const ext = path.posix.extname(record.file).toLowerCase();
+      if (!SCANNABLE_EXTS.has(ext)) {
+        const pathHit = sensitivePathFinding(record.file);
+        if (pathHit) perFile.push([pathHit]);
+        continue;
+      }
+      try {
+        const abs = path.join(outDir, record.file);
+        const stat = await fs.stat(abs).catch(() => null);
+        if (!stat || !stat.isFile() || stat.size === 0 || stat.size > MAX_SCAN_BYTES_PER_FILE) continue;
+        const text = await fs.readFile(abs, "utf8");
+        bytesScanned += Math.min(text.length, MAX_SCAN_BYTES_PER_FILE);
+        assetCount += 1;
+        const hits = scanTextForSecrets(text, record.file);
+        if (hits.length > 0) perFile.push(hits);
+        const pathHit = sensitivePathFinding(record.file);
+        if (pathHit) perFile.push([pathHit]);
+      } catch {
+        // Binary or unreadable asset — skip.
+      }
+    }
+
+    const filesScanned = pages.length + assetCount;
+    const { findings } = mergeFindings(perFile);
+    const summary = summarize(findings, filesScanned, bytesScanned);
+    jobManager.markSecretsComplete(jobId, findings, summary);
+    jobManager.setProgress(jobId, 90);
+    if (findings.length === 0) {
+      jobManager.log(jobId, "SUCCESS", `Secret scan clean: ${filesScanned} file(s) checked, no exposed credentials found.`);
+    } else {
+      // Log counts + types only — never values, not even redacted excerpts at
+      // INFO level. Full redacted list is served via the secrets endpoint.
+      const byType = new Map<string, number>();
+      for (const f of findings) byType.set(`${f.severity}:${f.type}`, (byType.get(`${f.severity}:${f.type}`) ?? 0) + 1);
+      const top = [...byType.entries()].slice(0, 5).map(([k, n]) => `${k}×${n}`).join(", ");
+      jobManager.log(
+        jobId,
+        findings.some((f) => f.severity === "high") ? "WARN" : "INFO",
+        `Secret scan: ${findings.length} potential exposure(s) in ${filesScanned} file(s) (${summary.high} high / ${summary.medium} medium / ${summary.low} low): ${top}. See the Secret Scan tab for the redacted report.`,
+      );
+    }
+    return summary;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    jobManager.markSecretsFailed(jobId, message);
+    jobManager.log(jobId, "WARN", `Secret scan skipped: ${message}`);
+    return null;
+  }
+}
+
+/**
+ * Capture every harvested page at each selected viewport and pack the PNGs
+ * (in individual per-viewport folders) into the separate screenshots `.zip`.
+ */
+async function runScreenshotsStage(jobId: string, pages: PageRecord[]): Promise<void> {
+  const job = jobManager.get(jobId);
+  if (!job) return;
+  const viewports = job.options.screenshotViewports;
+  const shotsDir = job.screenshotsDir;
+  const shotsZip = job.screenshotZipPath;
+  if (!shotsDir || !shotsZip) {
+    jobManager.markScreenshotsFailed(jobId, "screenshots misconfigured");
+    jobManager.log(jobId, "WARN", "Screenshots skipped: job misconfigured.");
+    return;
+  }
+
+  jobManager.setStage(jobId, "screenshots", "Capturing screenshots…");
+  jobManager.setProgress(jobId, 92);
+
+  const { targets, truncated } = buildScreenshotTargets(
+    pages.map((page) => ({ url: page.finalUrl || page.url })),
+    viewports,
+  );
+  if (truncated > 0) {
+    jobManager.log(
+      jobId,
+      "WARN",
+      `Screenshot cap reached — capturing the first ${targets.length} view(s), skipping ${truncated}.`,
+    );
+  }
+  if (targets.length === 0) {
+    jobManager.markScreenshotsFailed(jobId, "no pages available to capture");
+    jobManager.log(jobId, "WARN", "Screenshots skipped: no pages available to capture.");
+    return;
+  }
+
+  jobManager.markScreenshotsRunning(jobId, targets.length);
+  jobManager.log(
+    jobId,
+    "INFO",
+    `Screenshots: rendering ${targets.length} view(s) across ${viewports.map((viewport) => `${viewport} (${SCREENSHOT_VIEWPORTS[viewport].width}px)`).join(", ")}…`,
+  );
+
+  let result: Awaited<ReturnType<typeof captureScreenshots>>;
+  try {
+    result = await captureScreenshots(targets, shotsDir, (done, total, target) => {
+      jobManager.markScreenshotsProgress(jobId, done, 0);
+      jobManager.patchMetrics(jobId, {
+        currentOperation: `Screenshot ${done}/${total}: ${target.viewport}/${target.file.split("/").pop() ?? target.file}`,
+      });
+      jobManager.setProgress(jobId, 92 + Math.round((done / total) * 6));
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    jobManager.markScreenshotsFailed(jobId, message);
+    jobManager.log(jobId, "WARN", `Screenshots skipped: ${message}`);
+    return;
+  }
+  jobManager.markScreenshotsProgress(jobId, result.completed, result.failed);
+
+  if (result.completed === 0) {
+    const firstError = result.failures[0]?.error ?? "all captures failed";
+    jobManager.markScreenshotsFailed(jobId, firstError);
+    jobManager.log(jobId, "WARN", `Screenshots failed: ${firstError}`);
+    return;
+  }
+
+  await fs.ensureDir(shotsDir);
+  await fs.writeFile(
+    path.join(shotsDir, "screenshots-manifest.json"),
+    JSON.stringify(
+      {
+        generator: "StaticSnap/1.0 screenshots",
+        source: job.targetUrl,
+        exportedAt: new Date().toISOString(),
+        viewports: Object.fromEntries(
+          viewports.map((viewport) => [viewport, SCREENSHOT_VIEWPORTS[viewport]]),
+        ),
+        shots: result.files,
+        failures: result.failures,
+        totals: { completed: result.completed, failed: result.failed },
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
+
+  await fs.ensureDir(path.dirname(shotsZip));
+  const { bytes } = await createZip(shotsDir, shotsZip, (archived) => {
+    jobManager.patchMetrics(jobId, {
+      currentOperation: `Screenshots: packing ${archived} file(s)…`,
+    });
+  });
+  jobManager.markScreenshotsComplete(jobId, bytes);
+  jobManager.log(
+    jobId,
+    "SUCCESS",
+    `Screenshots ready: ${result.completed} PNG(s)${result.failed > 0 ? `, ${result.failed} failed` : ""} → ${formatBytes(bytes)}`,
+  );
+  if (result.failed > 0) {
+    const preview = result.failures
+      .slice(0, 3)
+      .map((failure) => `${failure.viewport}:${failure.url} (${failure.error})`)
+      .join(" | ");
+    jobManager.log(jobId, "WARN", `Screenshot failures: ${preview}`);
+  }
+  jobManager.setProgress(jobId, 98);
 }
 
 /* ------------------------------------------------------------------ */

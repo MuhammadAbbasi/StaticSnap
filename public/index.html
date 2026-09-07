@@ -136,6 +136,44 @@
           </label>
         </div>
 
+        <span class="mt-5 block text-sm font-semibold">Page screenshots <span class="ml-1 rounded bg-cyan-500/15 px-1.5 py-0.5 text-[10px] font-bold text-cyan-600 dark:text-cyan-300">BETA</span></span>
+        <div class="mt-2 space-y-2">
+          <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700 hover:border-cyan-400/60 transition">
+            <input id="shotDesktop" type="checkbox" class="mt-0.5 h-4 w-4 accent-cyan-500" />
+            <span>
+              <span class="block text-sm font-medium">Desktop <span class="font-mono text-xs text-slate-400">1280px</span></span>
+              <span class="block text-xs text-slate-500 dark:text-slate-400">Full-page capture → <code class="font-mono">/desktop/</code>.</span>
+            </span>
+          </label>
+          <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700 hover:border-cyan-400/60 transition">
+            <input id="shotTablet" type="checkbox" class="mt-0.5 h-4 w-4 accent-cyan-500" />
+            <span>
+              <span class="block text-sm font-medium">Tablet <span class="font-mono text-xs text-slate-400">768px</span></span>
+              <span class="block text-xs text-slate-500 dark:text-slate-400">Full-page capture → <code class="font-mono">/tablet/</code>.</span>
+            </span>
+          </label>
+          <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700 hover:border-cyan-400/60 transition">
+            <input id="shotMobile" type="checkbox" class="mt-0.5 h-4 w-4 accent-cyan-500" />
+            <span>
+              <span class="block text-sm font-medium">Mobile <span class="font-mono text-xs text-slate-400">390px</span></span>
+              <span class="block text-xs text-slate-500 dark:text-slate-400">Full-page capture → <code class="font-mono">/mobile/</code>.</span>
+            </span>
+          </label>
+          <p class="text-[11px] text-slate-400">Screenshots run in the background after the site bundle is ready, and download as a separate .zip.</p>
+        </div>
+
+        <span class="mt-5 block text-sm font-semibold">Secret exposure scan <span class="ml-1 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 dark:text-violet-300">PRO</span></span>
+        <div class="mt-2 space-y-2">
+          <label id="secretsOptRow" class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700 hover:border-violet-400/60 transition">
+            <input id="optSecrets" type="checkbox" class="mt-0.5 h-4 w-4 accent-violet-500" />
+            <span>
+              <span class="block text-sm font-medium">Scan for leaked API keys &amp; passwords</span>
+              <span class="block text-xs text-slate-500 dark:text-slate-400">Checks pages + JS/CSS for AWS, Stripe, GitHub, OpenAI keys, JWTs, hardcoded passwords. Redacted report.</span>
+            </span>
+          </label>
+          <p id="secretsLockNote" class="hidden rounded-xl border border-amber-500/30 bg-amber-500/5 p-2.5 text-[11px] text-amber-700 dark:text-amber-300">🔒 Subscribed feature — the server has not enabled Pro scans. You can still tick the box, but the job will be refused with an upgrade notice until <code class="font-mono">STATICSNAP_PRO_ENABLED=1</code> is set.</p>
+        </div>
+
         <button id="startBtn"
           class="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-cyan-500/25 transition hover:brightness-110 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:saturate-50">
           <svg id="startIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z" stroke-linejoin="round"/></svg>
@@ -154,6 +192,13 @@
       <!-- ============ RIGHT: Telemetry ============ -->
       <section class="min-w-0 space-y-6">
 
+        <!-- Result tabs: Export pipeline vs Pro secret-scan report -->
+        <div class="flex gap-2" role="tablist" aria-label="Result views">
+          <button id="tabBtnExport" role="tab" aria-selected="true" class="rounded-xl px-4 py-2 text-sm font-bold transition bg-slate-900 text-white dark:bg-white dark:text-slate-900">Export</button>
+          <button id="tabBtnSecrets" role="tab" aria-selected="false" class="rounded-xl px-4 py-2 text-sm font-bold transition bg-white text-slate-500 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700">Secret Scan <span class="ml-1 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 dark:text-violet-300">PRO</span> <span id="secretsBadge" class="ml-1 hidden rounded-full bg-red-500 px-1.5 py-0.5 font-mono text-[10px] text-white">0</span></button>
+        </div>
+
+        <div id="tabExport" class="space-y-6 min-w-0">
         <!-- Stepper + progress -->
         <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -165,7 +210,7 @@
           </div>
 
           <!-- Stepper -->
-          <ol id="stepper" class="mt-4 grid grid-cols-5 gap-1 sm:gap-2">
+          <ol id="stepper" class="mt-4 grid grid-cols-7 gap-1 sm:gap-2">
             <!-- injected by JS -->
           </ol>
 
@@ -247,6 +292,15 @@
               Reset / Scan Another Site
             </button>
           </div>
+          <!-- Screenshots: separate background bundle -->
+          <div id="shotsRow" class="mt-3 hidden flex-wrap items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-3">
+            <span id="shotsSpinner" class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent"></span>
+            <span id="shotsStatus" class="min-w-0 flex-1 text-xs font-medium text-slate-600 dark:text-slate-300">Screenshots queued…</span>
+            <a id="shotsBtn" href="#" class="hidden items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2 text-xs font-bold text-white shadow transition hover:brightness-110">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              Download Screenshots (.ZIP)
+            </a>
+          </div>
         </div>
 
         <!-- Failed -->
@@ -258,6 +312,61 @@
               <p id="failMsg" class="mt-1 text-sm text-slate-600 dark:text-slate-300">—</p>
               <button id="resetBtn2" class="mt-3 rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800">Try again</button>
             </div>
+          </div>
+        </div>
+
+        </div><!-- /tabExport -->
+
+        <!-- Secret Scan tab (Pro / subscribed) -->
+        <div id="tabSecrets" class="hidden space-y-4 min-w-0">
+          <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h2 class="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Secret exposure report <span class="ml-1 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-600 dark:text-violet-300">PRO</span></h2>
+              <div class="flex items-center gap-2">
+                <select id="sevFilter" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-bold dark:border-slate-700 dark:bg-slate-950" title="Filter by severity">
+                  <option value="all">All severities</option>
+                  <option value="high">High only</option>
+                  <option value="medium">Medium + High</option>
+                  <option value="low">Low only</option>
+                </select>
+                <button id="secretsDownload" class="hidden rounded-lg border border-slate-300 px-3 py-1 text-xs font-bold hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800">Download JSON</button>
+              </div>
+            </div>
+            <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Heuristic scan of public frontend content (harvested HTML + JS/CSS) for accidentally published credentials. Excerpts are <strong>redacted</strong> (<code class="font-mono">AKIA***…</code>) — verify each finding and rotate confirmed secrets. Not a substitute for a full audit.</p>
+
+            <!-- Locked (no Pro) -->
+            <div id="secretsLocked" class="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+              <div class="text-sm font-extrabold text-amber-700 dark:text-amber-300">🔒 Subscribed feature</div>
+              <p class="mt-1 text-xs text-slate-600 dark:text-slate-300">This deployment has not unlocked Pro scans. Set <code class="font-mono">STATICSNAP_PRO_ENABLED=1</code> (or <code class="font-mono">STATICSNAP_SECRET_SCAN_ENABLED=1</code>) on the server and restart, then re-run the export with the box ticked.</p>
+            </div>
+
+            <!-- Idle / not requested -->
+            <div id="secretsIdle" class="mt-4 rounded-xl border border-dashed border-slate-300 p-4 text-center text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              Tick <strong>“Scan for leaked API keys &amp; passwords”</strong> in Configuration and start an export to see the redacted report here.
+            </div>
+
+            <!-- Running -->
+            <div id="secretsRunning" class="hidden mt-4 items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/5 p-4 text-xs font-medium">
+              <span class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-violet-500 border-t-transparent"></span>
+              <span id="secretsRunningText">Scanning harvested pages + scripts…</span>
+            </div>
+
+            <!-- Summary -->
+            <div id="secretsSummary" class="hidden mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div class="rounded-xl border border-slate-200 p-3 text-center dark:border-slate-700"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Files</div><div id="secFiles" class="font-mono text-lg font-bold">0</div></div>
+              <div class="rounded-xl border border-red-500/40 p-3 text-center"><div class="text-[10px] font-bold uppercase tracking-wider text-red-400">High</div><div id="secHigh" class="font-mono text-lg font-bold text-red-500">0</div></div>
+              <div class="rounded-xl border border-amber-500/40 p-3 text-center"><div class="text-[10px] font-bold uppercase tracking-wider text-amber-400">Medium</div><div id="secMed" class="font-mono text-lg font-bold text-amber-500">0</div></div>
+              <div class="rounded-xl border border-slate-200 p-3 text-center dark:border-slate-700"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Low</div><div id="secLow" class="font-mono text-lg font-bold">0</div></div>
+            </div>
+
+            <!-- Clean -->
+            <div id="secretsClean" class="hidden mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-xs font-medium text-emerald-700 dark:text-emerald-300">✓ No exposed credentials detected in the scanned files.</div>
+
+            <!-- Failed -->
+            <div id="secretsFailed" class="hidden mt-4 rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-xs text-red-600 dark:text-red-300"></div>
+
+            <!-- Findings -->
+            <div id="secretsList" class="mt-4 hidden space-y-2"></div>
           </div>
         </div>
 
@@ -278,8 +387,10 @@
     { id: 'assets',     n: 3, label: 'Asset Engine' },
     { id: 'rewriting',  n: 4, label: 'Link Rewriting' },
     { id: 'archiving',  n: 5, label: 'Archiving' },
+    { id: 'secrets',    n: 6, label: 'Secret Scan' },
+    { id: 'screenshots', n: 7, label: 'Screenshots' },
   ];
-  var STAGE_LABEL = { discovery: 'Discovery', harvesting: 'Harvesting', assets: 'Asset Engine', rewriting: 'Link Transformation', archiving: 'Archive Generation' };
+  var STAGE_LABEL = { discovery: 'Discovery', harvesting: 'Harvesting', assets: 'Asset Engine', rewriting: 'Link Transformation', archiving: 'Archive Generation', secrets: 'Secret Scan', screenshots: 'Screenshots' };
 
   var $ = function (id) { return document.getElementById(id); };
   var urlInput = $('urlInput'), urlError = $('urlError'),
@@ -295,9 +406,29 @@
       autoScroll = $('autoScroll'), donePanel = $('donePanel'), failPanel = $('failPanel'),
       downloadBtn = $('downloadBtn'), doneMeta = $('doneMeta'), failMsg = $('failMsg'),
       jobMeta = $('jobMeta'), metaJobId = $('metaJobId'), metaTarget = $('metaTarget'),
-      toasts = $('toasts');
+      toasts = $('toasts'),
+      shotsRow = $('shotsRow'), shotsSpinner = $('shotsSpinner'),
+      shotsStatus = $('shotsStatus'), shotsBtn = $('shotsBtn');
 
-  var state = { jobId: null, es: null, running: false, lineCount: 0, autoDownloaded: false, currentStage: 'discovery', lastSeq: 0 };
+  var state = { jobId: null, es: null, running: false, lineCount: 0, autoDownloaded: false, currentStage: 'discovery', lastSeq: 0,
+    secretScanAvailable: false, secretsRequested: false, secretsStatus: 'disabled', secretsSummary: null, secretsFindings: [], secretsFetched: false };
+
+  /* ---------- result tabs (Export vs Secret Scan) ---------- */
+  var tabBtnExport = $('tabBtnExport'), tabBtnSecrets = $('tabBtnSecrets'),
+      tabExport = $('tabExport'), tabSecrets = $('tabSecrets');
+  var TAB_ON = 'rounded-xl px-4 py-2 text-sm font-bold transition bg-slate-900 text-white dark:bg-white dark:text-slate-900';
+  var TAB_OFF = 'rounded-xl px-4 py-2 text-sm font-bold transition bg-white text-slate-500 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700';
+  function showTab(which) {
+    var isSecrets = which === 'secrets';
+    tabExport.classList.toggle('hidden', isSecrets);
+    tabSecrets.classList.toggle('hidden', !isSecrets);
+    tabBtnExport.className = isSecrets ? TAB_OFF : TAB_ON;
+    tabBtnSecrets.className = isSecrets ? TAB_ON : TAB_OFF;
+    tabBtnExport.setAttribute('aria-selected', isSecrets ? 'false' : 'true');
+    tabBtnSecrets.setAttribute('aria-selected', isSecrets ? 'true' : 'false');
+  }
+  tabBtnExport.addEventListener('click', function () { showTab('export'); });
+  tabBtnSecrets.addEventListener('click', function () { showTab('secrets'); });
 
   /* ---------- stepper ---------- */
   function renderStepper(active, status) {
@@ -461,25 +592,233 @@
       mOp.textContent = p.metrics.currentOperation || '—';
       mOp.title = mOp.textContent;
     }
+    // The main bundle can go live before the job completes (screenshots keep
+    // running in the background), so surface it as soon as it has a URL.
+    if (p.downloadUrl) showMainDownload(p);
+    updateShots(p);
+    updateSecrets(p);
     if (p.log) appendLog(p.log);
     if (p.status === 'running') setStatus('running');
     if (p.complete) onComplete(p);
   }
 
+  function showMainDownload(p) {
+    donePanel.classList.remove('hidden');
+    failPanel.classList.add('hidden');
+    if (p.downloadUrl) {
+      downloadBtn.href = p.downloadUrl;
+      downloadBtn.setAttribute('download', '');
+    }
+    var size = p.bundleSizeHuman || '';
+    doneMeta.textContent = (size ? size + ' · ' : '') + (state.jobId || '');
+  }
+
+  /* ---------- screenshots (separate background bundle) ---------- */
+  function updateShots(p) {
+    var status = p.screenshotsStatus || 'disabled';
+    if (status === 'disabled') {
+      shotsRow.classList.add('hidden');
+      shotsRow.classList.remove('flex');
+      return;
+    }
+    shotsRow.classList.remove('hidden');
+    shotsRow.classList.add('flex');
+    if (p.screenshotsDownloadUrl) {
+      shotsSpinner.style.display = 'none';
+      var bits = [];
+      if (p.screenshotsSizeHuman) bits.push(p.screenshotsSizeHuman);
+      if (p.screenshotsTotal) bits.push(p.screenshotsTotal + ' views');
+      shotsStatus.textContent = 'Screenshots ready' + (bits.length ? ' · ' + bits.join(' · ') : '') + '.';
+      shotsBtn.href = p.screenshotsDownloadUrl;
+      shotsBtn.setAttribute('download', '');
+      shotsBtn.classList.remove('hidden');
+      shotsBtn.classList.add('flex');
+    } else if (status === 'failed') {
+      shotsSpinner.style.display = 'none';
+      shotsBtn.classList.add('hidden');
+      shotsBtn.classList.remove('flex');
+      shotsStatus.textContent = 'Screenshots failed: ' + (p.screenshotsError || 'unknown error') + '. The site bundle above is unaffected.';
+    } else {
+      var total = p.screenshotsTotal || 0, done = p.screenshotsDone || 0;
+      shotsSpinner.style.display = '';
+      shotsBtn.classList.add('hidden');
+      shotsBtn.classList.remove('flex');
+      shotsStatus.textContent = (status === 'running' && total > 0)
+        ? ('Capturing screenshots… ' + done + '/' + total + ' views')
+        : 'Screenshots queued — they start once the site bundle is ready…';
+    }
+  }
+
+  /* ---------- secret scan (Pro report tab) ---------- */
+  var SEV_STYLE = {
+    high: 'bg-red-500/15 text-red-600 ring-red-500/40 dark:text-red-300',
+    medium: 'bg-amber-500/15 text-amber-700 ring-amber-500/40 dark:text-amber-300',
+    low: 'bg-slate-500/15 text-slate-500 ring-slate-500/30 dark:text-slate-300'
+  };
+  function secretsSetVisible(id, visible, flex) {
+    var el = $(id);
+    if (!el) return;
+    el.classList.toggle('hidden', !visible);
+    if (flex) el.classList.toggle('flex', !!visible);
+  }
+  function updateSecrets(p) {
+    var status = p.secretsStatus || 'disabled';
+    state.secretsStatus = status;
+    if (p.secretsSummary) state.secretsSummary = p.secretsSummary;
+    var count = (p.secretsFindingsCount != null) ? p.secretsFindingsCount
+      : (state.secretsSummary ? state.secretsSummary.findings : 0);
+    var badge = $('secretsBadge');
+    if (count > 0) { badge.textContent = count > 99 ? '99+' : String(count); badge.classList.remove('hidden'); }
+    else badge.classList.add('hidden');
+
+    // Locked deployment: Pro not enabled — every other state is hidden.
+    var locked = !state.secretScanAvailable;
+    secretsSetVisible('secretsLocked', locked);
+    $('secretsLockNote').classList.toggle('hidden', state.secretScanAvailable);
+    if (locked) {
+      secretsSetVisible('secretsIdle', false);
+      secretsSetVisible('secretsRunning', false, true);
+      secretsSetVisible('secretsSummary', false);
+      secretsSetVisible('secretsClean', false);
+      secretsSetVisible('secretsFailed', false);
+      $('secretsList').classList.add('hidden');
+      $('secretsDownload').classList.add('hidden');
+      return;
+    }
+    if (status === 'disabled') {
+      secretsSetVisible('secretsIdle', true);
+      secretsSetVisible('secretsRunning', false, true);
+      secretsSetVisible('secretsSummary', false);
+      secretsSetVisible('secretsClean', false);
+      secretsSetVisible('secretsFailed', false);
+      $('secretsList').classList.add('hidden');
+      return;
+    }
+    secretsSetVisible('secretsIdle', false);
+    if (status === 'running' || status === 'pending') {
+      secretsSetVisible('secretsRunning', true, true);
+      $('secretsRunningText').textContent = status === 'pending' ? 'Secret scan queued — starts after link rewriting…' : 'Scanning harvested pages + scripts…';
+      secretsSetVisible('secretsFailed', false);
+      return;
+    }
+    secretsSetVisible('secretsRunning', false, true);
+    if (status === 'failed') {
+      var msg = p.secretsError || 'Secret scan failed.';
+      var box = $('secretsFailed');
+      box.textContent = msg;
+      secretsSetVisible('secretsFailed', true);
+      return;
+    }
+    if (status === 'completed') {
+      var s = state.secretsSummary || p.secretsSummary;
+      if (s) {
+        $('secFiles').textContent = s.filesScanned ?? 0;
+        $('secHigh').textContent = s.high ?? 0;
+        $('secMed').textContent = s.medium ?? 0;
+        $('secLow').textContent = s.low ?? 0;
+        secretsSetVisible('secretsSummary', true);
+      }
+      // Full redacted findings arrive via the dedicated endpoint.
+      if (!state.secretsFetched && state.jobId) fetchSecretsReport(state.jobId);
+      else if (state.secretsFindings.length === 0) renderSecretsList();
+      return;
+    }
+  }
+
+  function fetchSecretsReport(jobId) {
+    fetch('/api/jobs/' + encodeURIComponent(jobId) + '/secrets')
+      .then(function (res) {
+        if (!res.ok) return res.json().catch(function(){ return {}; }).then(function (body) {
+          throw new Error(body.error || ('Report unavailable (HTTP ' + res.status + ')'));
+        });
+        return res.json();
+      })
+      .then(function (body) {
+        state.secretsFetched = true;
+        state.secretsSummary = body.summary || state.secretsSummary;
+        state.secretsFindings = Array.isArray(body.findings) ? body.findings : [];
+        if (state.secretsSummary) {
+          $('secFiles').textContent = state.secretsSummary.filesScanned ?? 0;
+          $('secHigh').textContent = state.secretsSummary.high ?? 0;
+          $('secMed').textContent = state.secretsSummary.medium ?? 0;
+          $('secLow').textContent = state.secretsSummary.low ?? 0;
+          secretsSetVisible('secretsSummary', true);
+        }
+        renderSecretsList();
+        var badge = $('secretsBadge');
+        if (state.secretsFindings.length > 0) {
+          badge.textContent = state.secretsFindings.length > 99 ? '99+' : String(state.secretsFindings.length);
+          badge.classList.remove('hidden');
+        }
+        if (state.secretsFindings.length > 0) toast('warn', 'Secret scan found exposures', state.secretsFindings.length + ' redacted finding(s) — open the Secret Scan tab.');
+        else toast('success', 'Secret scan clean', 'No exposed credentials found.');
+      })
+      .catch(function (err) {
+        // 409 = still running (a later SSE frame retries); otherwise surface.
+        if (/still running/i.test(err.message)) return;
+        var box = $('secretsFailed');
+        box.textContent = err.message;
+        secretsSetVisible('secretsFailed', true);
+      });
+  }
+
+  function renderSecretsList() {
+    var list = $('secretsList');
+    var filter = ($('sevFilter') || {}).value || 'all';
+    var items = state.secretsFindings.filter(function (f) {
+      if (filter === 'all') return true;
+      if (filter === 'high') return f.severity === 'high';
+      if (filter === 'medium') return f.severity === 'high' || f.severity === 'medium';
+      if (filter === 'low') return f.severity === 'low';
+      return true;
+    });
+    secretsSetVisible('secretsFailed', false);
+    if (state.secretsStatus === 'completed' && state.secretsFindings.length === 0) {
+      secretsSetVisible('secretsClean', true);
+      list.classList.add('hidden');
+      list.innerHTML = '';
+      $('secretsDownload').classList.add('hidden');
+      return;
+    }
+    secretsSetVisible('secretsClean', false);
+    if (items.length === 0) {
+      list.classList.remove('hidden');
+      list.innerHTML = '<div class="rounded-xl border border-dashed border-slate-300 p-4 text-center text-xs text-slate-500 dark:border-slate-700">No findings match this filter.</div>';
+      return;
+    }
+    list.classList.remove('hidden');
+    list.innerHTML = '';
+    $('secretsDownload').classList.remove('hidden');
+    items.slice(0, 200).forEach(function (f) {
+      var badge = SEV_STYLE[f.severity] || SEV_STYLE.low;
+      var card = document.createElement('div');
+      card.className = 'rounded-xl border border-slate-200 p-3 dark:border-slate-700';
+      card.innerHTML =
+        '<div class="flex flex-wrap items-center gap-2">' +
+          '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ' + badge + '">' + escapeHtml(f.severity || '') + '</span>' +
+          '<span class="text-xs font-bold">' + escapeHtml(f.type || 'Finding') + '</span>' +
+          '<span class="ml-auto font-mono text-[11px] text-slate-400">' + escapeHtml(f.file || '') + (f.line ? ':' + escapeHtml(String(f.line)) : '') + '</span>' +
+        '</div>' +
+        '<div class="mt-1.5 rounded-lg bg-slate-950 p-2 font-mono text-[11px] text-slate-300 break-all">' + escapeHtml(f.redacted || '') + '</div>' +
+        (f.recommendation ? '<div class="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">→ ' + escapeHtml(f.recommendation) + '</div>' : '');
+      list.appendChild(card);
+    });
+  }
+
   function onComplete(p) {
     setRunning(false);
     closeStream();
+    updateSecrets(p);
     if (p.status === 'completed') {
       setStatus('completed');
       progressBar.style.width = '100%';
       progressPct.textContent = '100%';
-      donePanel.classList.remove('hidden');
-      failPanel.classList.add('hidden');
-      var size = p.bundleSizeHuman || formatBytes(p.bundleSize);
-      doneMeta.textContent = (p.bundleSize != null ? size + ' · ' : '') + (state.jobId || '');
+      showMainDownload(p);
+      updateShots(p);
+      if (state.secretsRequested && state.secretScanAvailable && !state.secretsFetched && state.jobId) {
+        fetchSecretsReport(state.jobId);
+      }
       if (p.downloadUrl) {
-        downloadBtn.href = p.downloadUrl;
-        downloadBtn.setAttribute('download', '');
         if (!state.autoDownloaded) {
           state.autoDownloaded = true;
           toast('success', 'Bundle ready', 'Your .zip download should start automatically.');
@@ -512,12 +851,40 @@
     state.autoDownloaded = false;
     state.lineCount = 0;
     state.lastSeq = 0;
+    state.secretsRequested = ($('optSecrets') || {}).checked === true;
+    state.secretsStatus = 'disabled';
+    state.secretsSummary = null;
+    state.secretsFindings = [];
+    state.secretsFetched = false;
+    // Secrets tab back to its pre-run state (lock state preserved).
+    $('secretsBadge').classList.add('hidden');
+    secretsSetVisible('secretsSummary', false);
+    secretsSetVisible('secretsClean', false);
+    secretsSetVisible('secretsFailed', false);
+    secretsSetVisible('secretsRunning', false, true);
+    $('secretsList').classList.add('hidden');
+    $('secretsList').innerHTML = '';
+    $('secretsDownload').classList.add('hidden');
+    if (state.secretScanAvailable) {
+      secretsSetVisible('secretsLocked', false);
+      secretsSetVisible('secretsIdle', true);
+    } else {
+      secretsSetVisible('secretsLocked', true);
+      secretsSetVisible('secretsIdle', false);
+    }
     termLines.innerHTML = '';
     termEmpty.style.display = '';
     termCount.textContent = '0 lines';
     donePanel.classList.add('hidden');
     failPanel.classList.add('hidden');
     jobMeta.classList.add('hidden');
+    shotsRow.classList.add('hidden');
+    shotsRow.classList.remove('flex');
+    shotsBtn.classList.add('hidden');
+    shotsBtn.classList.remove('flex');
+    shotsBtn.removeAttribute('href');
+    shotsSpinner.style.display = '';
+    shotsStatus.textContent = 'Screenshots queued…';
     renderStepper('discovery', 'idle');
     setStatus('idle');
     setRunning(false);
@@ -549,17 +916,29 @@
     }
     urlError.classList.add('hidden');
     var scope = (document.querySelector('input[name="scope"]:checked') || {}).value || 'landing';
+    var screenshotViewports = [];
+    if ($('shotDesktop').checked) screenshotViewports.push('desktop');
+    if ($('shotTablet').checked) screenshotViewports.push('tablet');
+    if ($('shotMobile').checked) screenshotViewports.push('mobile');
     var payload = {
       url: url,
       scope: scope,
       convertWebp: $('optWebp').checked,
-      downloadExternal: $('optExternal').checked
+      downloadExternal: $('optExternal').checked,
+      screenshotViewports: screenshotViewports,
+      secretScan: $('optSecrets').checked
     };
+    if (payload.secretScan && !state.secretScanAvailable) {
+      toast('warn', 'Pro feature', 'Secret scan needs a subscribed deployment (STATICSNAP_PRO_ENABLED=1). The export will be refused — or untick the box for a normal export.');
+      showTab('secrets');
+    }
     startJob(payload);
   });
 
   function startJob(payload) {
     reset();
+    // reset() re-reads the checkbox, but keep the submitted intent explicit.
+    state.secretsRequested = payload.secretScan === true;
     setRunning(true);
     setStatus('queued');
     stageLabel.textContent = 'Creating job…';
@@ -587,6 +966,13 @@
             }
             throw new Error('An access token is required to start an export.');
           }
+          // Pro-gated secret scan answers 402 — surface the upgrade tab.
+          if (res.status === 402 && body.upgradeRequired) {
+            showTab('secrets');
+            var e = new Error(body.error || 'Secret scan requires a subscribed (Pro) deployment.');
+            e.upgradeRequired = true;
+            throw e;
+          }
           throw new Error(body.error || ('Request failed (HTTP ' + res.status + ')'));
         });
         return res.json();
@@ -606,7 +992,8 @@
         failPanel.classList.remove('hidden');
         failMsg.textContent = err.message;
         appendLog({ ts: new Date().toISOString(), level: 'ERROR', message: err.message });
-        toast('error', 'Could not start job', err.message);
+        if (err.upgradeRequired) toast('warn', 'Pro subscription required', err.message);
+        else toast('error', 'Could not start job', err.message);
       });
   }
 
@@ -674,15 +1061,41 @@
     if (saved === 'light') themeToggle.click();
   } catch (e) {}
 
+  /* ---------- secrets tab controls ---------- */
+  $('sevFilter').addEventListener('change', renderSecretsList);
+  $('secretsDownload').addEventListener('click', function () {
+    if (!state.secretsFindings.length) return;
+    var blob = new Blob([JSON.stringify({
+      jobId: state.jobId,
+      exportedAt: new Date().toISOString(),
+      summary: state.secretsSummary,
+      findings: state.secretsFindings,
+      disclaimer: 'Redacted heuristic report — verify each finding and rotate confirmed secrets.'
+    }, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'secrets-report-' + (state.jobId || 'scan') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  });
+
   /* ---------- health ---------- */
-  fetch('/api/health').then(function (r) { return r.json(); }).then(function () {
+  fetch('/api/health').then(function (r) { return r.json(); }).then(function (body) {
     $('healthDot').className = 'h-2 w-2 rounded-full bg-emerald-400';
-    $('healthText').textContent = 'api online';
+    $('healthText').textContent = 'api online' + (body && body.pro ? ' · pro' : '');
+    var available = !!(body && ((body.features && body.features.secretScan) || body.pro));
+    state.secretScanAvailable = available;
+    $('secretsLockNote').classList.toggle('hidden', available);
+    secretsSetVisible('secretsLocked', !available);
+    secretsSetVisible('secretsIdle', available && !state.jobId);
+    if (!available) showTab('export');
   }).catch(function () {
     $('healthDot').className = 'h-2 w-2 rounded-full bg-red-500';
     $('healthText').textContent = 'api offline';
   });
 
+  showTab('export');
   renderStepper('discovery', 'idle');
 })();
 </script>

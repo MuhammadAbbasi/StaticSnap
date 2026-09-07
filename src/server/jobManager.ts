@@ -4,6 +4,8 @@ import { EOL, tmpdir } from "node:os";
 import path from "node:path";
 import fs from "fs-extra";
 import type { Response } from "express";
+import type { ScreenshotViewport } from "./screenshots.js";
+import type { SecretFinding, SecretStatus, SecretSummary } from "./secrets.js";
 
 /** Lifecycle states for a StaticSnap export job. */
 export type JobStatus = "queued" | "running" | "completed" | "failed";
@@ -14,7 +16,17 @@ export type StageId =
   | "harvesting"
   | "assets"
   | "rewriting"
-  | "archiving";
+  | "archiving"
+  | "secrets"
+  | "screenshots";
+
+/** Lifecycle of the optional screenshots capture within a job. */
+export type ScreenshotStatus =
+  | "disabled"
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed";
 
 /** Terminal log severity. */
 export type LogLevel = "INFO" | "SUCCESS" | "WARN" | "ERROR";
@@ -52,6 +64,10 @@ export interface JobOptions {
   scope: CrawlScope;
   convertWebp: boolean;
   downloadExternal: boolean;
+  /** Selected screenshot device classes; empty disables page captures. */
+  screenshotViewports: ScreenshotViewport[];
+  /** Pro-only: scan harvested HTML/assets for exposed secrets. */
+  secretScan: boolean;
 }
 
 export interface Job {
@@ -68,6 +84,21 @@ export interface Job {
   outDir: string;
   zipPath: string | null;
   bundleSize: number | null;
+  /** Working dir for per-viewport PNG captures (sibling of the site dir). */
+  screenshotsDir: string | null;
+  /** Destination of the separate screenshots `.zip` bundle. */
+  screenshotZipPath: string | null;
+  screenshotsStatus: ScreenshotStatus;
+  screenshotsTotal: number;
+  screenshotsDone: number;
+  screenshotsFailed: number;
+  screenshotsSize: number | null;
+  screenshotsError: string | null;
+  /** Pro-only secret-exposure analysis (redacted findings, safe to transmit). */
+  secretsStatus: SecretStatus;
+  secretsFindings: SecretFinding[];
+  secretsSummary: SecretSummary | null;
+  secretsError: string | null;
   error: string | null;
   createdAt: number;
   completedAt: number | null;
@@ -92,6 +123,19 @@ export interface StreamPayload {
   downloadUrl: string | null;
   bundleSize: number | null;
   bundleSizeHuman: string | null;
+  screenshotsStatus: ScreenshotStatus;
+  screenshotsTotal: number;
+  screenshotsDone: number;
+  screenshotsFailed: number;
+  screenshotsDownloadUrl: string | null;
+  screenshotsSize: number | null;
+  screenshotsSizeHuman: string | null;
+  screenshotsError: string | null;
+  /** Lightweight scan state for SSE (full findings via detail()/secrets endpoint). */
+  secretsStatus: SecretStatus;
+  secretsSummary: SecretSummary | null;
+  secretsFindingsCount: number;
+  secretsError: string | null;
 }
 
 export const STAGE_ORDER: StageId[] = [
@@ -100,6 +144,8 @@ export const STAGE_ORDER: StageId[] = [
   "assets",
   "rewriting",
   "archiving",
+  "secrets",
+  "screenshots",
 ];
 
 export const STAGE_LABELS: Record<StageId, string> = {
@@ -108,6 +154,8 @@ export const STAGE_LABELS: Record<StageId, string> = {
   assets: "Asset Engine",
   rewriting: "Link Transformation",
   archiving: "Archive Generation",
+  secrets: "Secret Scan",
+  screenshots: "Screenshots",
 };
 
 /** 15 minutes — retention for /tmp site dirs + zips after completion. */
@@ -171,6 +219,10 @@ class JobManager {
     const target = new URL(rawOptions.url);
     const id = randomUUID().replace(/-/g, "").slice(0, 12);
     const base = path.join(tmpdir(), `staticsnap-${id}`);
+    const screenshotsEnabled =
+      Array.isArray(rawOptions.screenshotViewports) &&
+      rawOptions.screenshotViewports.length > 0;
+    const secretsRequested = rawOptions.secretScan === true;
     const job: Job = {
       id,
       options: { ...rawOptions, url: target.toString() },
@@ -192,6 +244,20 @@ class JobManager {
       outDir: path.join(base, "site"),
       zipPath: path.join(base, `${domainForFilename(target.hostname)}-static.zip`),
       bundleSize: null,
+      screenshotsDir: screenshotsEnabled ? path.join(base, "screenshots") : null,
+      screenshotZipPath: screenshotsEnabled
+        ? path.join(base, `${domainForFilename(target.hostname)}-screenshots.zip`)
+        : null,
+      screenshotsStatus: screenshotsEnabled ? "pending" : "disabled",
+      screenshotsTotal: 0,
+      screenshotsDone: 0,
+      screenshotsFailed: 0,
+      screenshotsSize: null,
+      screenshotsError: null,
+      secretsStatus: secretsRequested ? "pending" : "disabled",
+      secretsFindings: [],
+      secretsSummary: null,
+      secretsError: null,
       error: null,
       createdAt: Date.now(),
       completedAt: null,
@@ -226,7 +292,7 @@ class JobManager {
           `# StaticSnap job ${job.id}`,
           `# target : ${job.targetUrl}`,
           `# scope  : ${job.options.scope}`,
-          `# options: webp=${job.options.convertWebp} external=${job.options.downloadExternal}`,
+          `# options: webp=${job.options.convertWebp} external=${job.options.downloadExternal} screenshots=${job.options.screenshotViewports.join(",") || "off"} secrets=${job.options.secretScan ? "on" : "off"}`,
           `# started: ${new Date(job.createdAt).toISOString()}`,
           "",
         ].join(EOL),
@@ -266,6 +332,8 @@ class JobManager {
           `# assets : ${job.metrics.assetsDownloaded} ok / ${job.metrics.assetsFailed} failed`,
           `# bytes  : ${formatBytes(job.metrics.bytesDownloaded)}`,
           `# bundle : ${job.bundleSize !== null ? formatBytes(job.bundleSize) : "none"}`,
+          `# screenshots: ${job.screenshotsStatus}${job.screenshotsStatus === "completed" ? ` (${job.screenshotsDone} ok / ${job.screenshotsFailed} failed, ${formatBytes(job.screenshotsSize ?? 0)})` : ""}${job.screenshotsError ? ` error=${job.screenshotsError}` : ""}`,
+          `# secrets: ${job.secretsStatus}${job.secretsSummary ? ` (${job.secretsSummary.findings} findings: ${job.secretsSummary.high} high / ${job.secretsSummary.medium} medium / ${job.secretsSummary.low} low)` : ""}${job.secretsError ? ` error=${job.secretsError}` : ""}`,
           `# elapsed: ${(elapsed / 1000).toFixed(1)}s`,
           `# dropped: ${job.droppedLogs} in-memory entr(ies) trimmed; this file is complete`,
           "",
@@ -293,6 +361,7 @@ class JobManager {
       if (job.cleaned) continue;
       total += job.metrics.bytesDownloaded;
       if (job.bundleSize !== null) total += job.bundleSize;
+      if (job.screenshotsSize !== null) total += job.screenshotsSize;
     }
     return total;
   }
@@ -372,14 +441,105 @@ class JobManager {
     const job = this.jobs.get(id);
     if (!job) return;
     job.status = "completed";
-    job.stage = "archiving";
+    // Keep the current stage (archiving when screenshots are off, screenshots
+    // when captures ran) so the stepper ends where the work actually ended.
     job.progress = 100;
     job.bundleSize = bundleSize;
     job.completedAt = Date.now();
-    job.metrics.currentOperation = "Done — bundle ready.";
+    job.metrics.currentOperation =
+      job.screenshotsStatus === "completed"
+        ? "Done — site + screenshots ready."
+        : job.screenshotsStatus === "failed"
+          ? "Done — bundle ready (screenshots failed)."
+          : "Done — bundle ready.";
     this.broadcast(id, null);
     this.closeLog(job);
     this.scheduleCleanup(id);
+  }
+
+  /**
+   * Publish the main `.zip` while the job keeps running.
+   *
+   * Screenshots run *after* the static bundle so the primary download stays
+   * fast: once this is called, `downloadUrl` is live even though the job is
+   * still `running` through the screenshots stage.
+   */
+  markBundleReady(id: string, bundleSize: number): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.bundleSize = bundleSize;
+    this.broadcast(id, null);
+  }
+
+  markScreenshotsRunning(id: string, total: number): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.screenshotsStatus = "running";
+    job.screenshotsTotal = total;
+    job.screenshotsDone = 0;
+    job.screenshotsFailed = 0;
+    this.broadcast(id, null);
+  }
+
+  markScreenshotsProgress(id: string, done: number, failed: number): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.screenshotsDone = done;
+    job.screenshotsFailed = failed;
+    this.broadcast(id, null);
+  }
+
+  markScreenshotsComplete(id: string, zipBytes: number): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.screenshotsStatus = "completed";
+    job.screenshotsSize = zipBytes;
+    this.broadcast(id, null);
+  }
+
+  markScreenshotsFailed(id: string, error: string): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    // A failed capture phase degrades to "no screenshots zip" — the main
+    // bundle is unaffected, so the job itself still completes.
+    if (job.screenshotsStatus !== "completed") {
+      job.screenshotsStatus = "failed";
+    }
+    job.screenshotsError = error;
+    this.broadcast(id, null);
+  }
+
+  markSecretsRunning(id: string): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.secretsStatus = "running";
+    job.secretsError = null;
+    this.broadcast(id, null);
+  }
+
+  markSecretsComplete(
+    id: string,
+    findings: SecretFinding[],
+    summary: SecretSummary,
+  ): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.secretsStatus = "completed";
+    job.secretsFindings = findings;
+    job.secretsSummary = summary;
+    job.secretsError = null;
+    this.broadcast(id, null);
+  }
+
+  markSecretsFailed(id: string, error: string): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    // A failed scan degrades gracefully — the static bundle is unaffected.
+    if (job.secretsStatus !== "completed") {
+      job.secretsStatus = "failed";
+    }
+    job.secretsError = error;
+    this.broadcast(id, null);
   }
 
   markFailed(id: string, error: string): void {
@@ -415,10 +575,24 @@ class JobManager {
       metrics: { ...job.metrics },
       complete: done,
       error: job.error,
-      downloadUrl: job.status === "completed" ? `/api/download/${job.id}` : null,
+      downloadUrl: job.bundleSize !== null ? `/api/download/${job.id}` : null,
       bundleSize: job.bundleSize,
       bundleSizeHuman:
         job.bundleSize !== null ? formatBytes(job.bundleSize) : null,
+      screenshotsStatus: job.screenshotsStatus,
+      screenshotsTotal: job.screenshotsTotal,
+      screenshotsDone: job.screenshotsDone,
+      screenshotsFailed: job.screenshotsFailed,
+      screenshotsDownloadUrl:
+        job.screenshotsStatus === "completed" ? `/api/download/${job.id}/screenshots` : null,
+      screenshotsSize: job.screenshotsSize,
+      screenshotsSizeHuman:
+        job.screenshotsSize !== null ? formatBytes(job.screenshotsSize) : null,
+      screenshotsError: job.screenshotsError,
+      secretsStatus: job.secretsStatus,
+      secretsSummary: job.secretsSummary ? { ...job.secretsSummary } : null,
+      secretsFindingsCount: job.secretsFindings.length,
+      secretsError: job.secretsError,
     };
   }
 
@@ -428,7 +602,7 @@ class JobManager {
   }
 
   /** Full state for the REST polling fallback. */
-  detail(id: string): (Job & { bundleSizeHuman: string | null }) | null {
+  detail(id: string): (Job & { bundleSizeHuman: string | null; screenshotsSizeHuman: string | null }) | null {
     const job = this.jobs.get(id);
     if (!job) return null;
     return {
@@ -437,6 +611,8 @@ class JobManager {
       metrics: { ...job.metrics },
       bundleSizeHuman:
         job.bundleSize !== null ? formatBytes(job.bundleSize) : null,
+      screenshotsSizeHuman:
+        job.screenshotsSize !== null ? formatBytes(job.screenshotsSize) : null,
     };
   }
 
@@ -468,10 +644,24 @@ class JobManager {
       metrics: { ...job.metrics },
       complete: done,
       error: job.error,
-      downloadUrl: job.status === "completed" ? `/api/download/${job.id}` : null,
+      downloadUrl: job.bundleSize !== null ? `/api/download/${job.id}` : null,
       bundleSize: job.bundleSize,
       bundleSizeHuman:
         job.bundleSize !== null ? formatBytes(job.bundleSize) : null,
+      screenshotsStatus: job.screenshotsStatus,
+      screenshotsTotal: job.screenshotsTotal,
+      screenshotsDone: job.screenshotsDone,
+      screenshotsFailed: job.screenshotsFailed,
+      screenshotsDownloadUrl:
+        job.screenshotsStatus === "completed" ? `/api/download/${job.id}/screenshots` : null,
+      screenshotsSize: job.screenshotsSize,
+      screenshotsSizeHuman:
+        job.screenshotsSize !== null ? formatBytes(job.screenshotsSize) : null,
+      screenshotsError: job.screenshotsError,
+      secretsStatus: job.secretsStatus,
+      secretsSummary: job.secretsSummary ? { ...job.secretsSummary } : null,
+      secretsFindingsCount: job.secretsFindings.length,
+      secretsError: job.secretsError,
     };
   }
 
@@ -532,7 +722,7 @@ class JobManager {
     }
   }
 
-  /** Delete temp site dir + zip 15 min after completion. Idempotent. */
+  /** Delete temp site dir + zips 15 min after completion. Idempotent. */
   async cleanup(id: string): Promise<void> {
     const job = this.jobs.get(id);
     if (!job) return;
@@ -540,6 +730,7 @@ class JobManager {
     job.cleaned = true;
     const targets = [job.outDir, path.dirname(job.outDir)];
     if (job.zipPath) targets.push(job.zipPath);
+    if (job.screenshotZipPath) targets.push(job.screenshotZipPath);
     for (const target of new Set(targets)) {
       try {
         await fs.remove(target);
