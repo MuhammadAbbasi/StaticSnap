@@ -1,5 +1,9 @@
 # StaticSnap
 
+<p align="center">
+  <img src="public/media/brand-banner.jpg" alt="StaticSnap" width="100%" />
+</p>
+
 Turn any front-end-heavy website into a self-contained static bundle you can host anywhere.
 
 Paste a URL, pick a scope, watch the crawl stream live, download a `.zip`. Unzip it on any static host — S3, Netlify, nginx, GitHub Pages — and it serves the same pages with no origin server, no database, and no runtime.
