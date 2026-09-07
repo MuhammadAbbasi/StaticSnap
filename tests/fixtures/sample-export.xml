@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:excerpt="http://wordpress.org/export/1.2/excerpt/"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:wp="http://wordpress.org/export/1.2/">
+  <channel>
+    <title>Sample Site</title>
+    <link>https://example.com</link>
+    <description>Sample WordPress export for e2e testing</description>
+    <pubDate>Wed, 01 May 2024 10:00:00 +0000</pubDate>
+    <language>en-US</language>
+    <wp:wxr_version>1.2</wp:wxr_version>
+
+    <item>
+      <title>Hello World</title>
+      <link>https://example.com/hello-world/</link>
+      <pubDate>Wed, 01 May 2024 10:00:00 +0000</pubDate>
+      <dc:creator><![CDATA[admin]]></dc:creator>
+      <description></description>
+      <content:encoded><![CDATA[<!-- wp:paragraph --><p>Welcome to the migrated site. Here is an image:</p><!-- /wp:paragraph --><!-- wp:image --><figure class="wp-block-image"><img src="__MEDIA_BASE_URL__/uploads/test.png" alt="Test image" /><figcaption>Test caption</figcaption></figure><!-- /wp:image --><!-- wp:quote --><blockquote class="wp-block-quote"><p>Migration works.</p><cite>Tester</cite></blockquote><!-- /wp:quote -->]]></content:encoded>
+      <excerpt:encoded><![CDATA[Welcome excerpt]]></excerpt:encoded>
+      <wp:post_name>hello-world</wp:post_name>
+      <wp:post_date>2024-05-01 10:00:00</wp:post_date>
+      <wp:status>publish</wp:status>
+      <wp:post_type>post</wp:post_type>
+      <category domain="category" nicename="news"><![CDATA[News]]></category>
+      <category domain="post_tag" nicename="intro"><![CDATA[Intro]]></category>
+      <wp:postmeta>
+        <wp:meta_key><![CDATA[_edit_last]]></wp:meta_key>
+        <wp:meta_value><![CDATA[1]]></wp:meta_value>
+      </wp:postmeta>
+      <wp:postmeta>
+        <wp:meta_key><![CDATA[_thumbnail_id]]></wp:meta_key>
+        <wp:meta_value><![CDATA[101]]></wp:meta_value>
+      </wp:postmeta>
+    </item>
+
+    <item>
+      <title>Second Post</title>
+      <link>https://example.com/second-post/</link>
+      <pubDate>Thu, 02 May 2024 12:00:00 +0000</pubDate>
+      <dc:creator><![CDATA[admin]]></dc:creator>
+      <description></description>
+      <content:encoded><![CDATA[<!-- wp:heading --><h2>Subheading</h2><!-- /wp:heading --><!-- wp:paragraph --><p>Plain content with a second image <img src="__MEDIA_BASE_URL__/uploads/photo.jpg" alt="Photo" /> inline.</p><!-- /wp:paragraph --><!-- wp:code --><pre class="wp-block-code"><code class="language-js">console.log("hello");</code></pre><!-- /wp:code -->]]></content:encoded>
+      <excerpt:encoded><![CDATA[Second excerpt]]></excerpt:encoded>
+      <wp:post_name>second-post</wp:post_name>
+      <wp:post_date>2024-05-02 12:00:00</wp:post_date>
+      <wp:status>publish</wp:status>
+      <wp:post_type>post</wp:post_type>
+      <category domain="category" nicename="updates"><![CDATA[Updates]]></category>
+      <category domain="post_tag" nicename="release"><![CDATA[Release]]></category>
+      <category domain="post_tag" nicename="intro"><![CDATA[Intro]]></category>
+      <wp:postmeta>
+        <wp:meta_key><![CDATA[_thumbnail_id]]></wp:meta_key>
+        <wp:meta_value><![CDATA[999]]></wp:meta_value>
+      </wp:postmeta>
+    </item>
+
+    <item>
+      <title>About</title>
+      <link>https://example.com/about/</link>
+      <pubDate>Fri, 03 May 2024 09:00:00 +0000</pubDate>
+      <dc:creator><![CDATA[admin]]></dc:creator>
+      <description></description>
+      <content:encoded><![CDATA[<p>Classic about page without Gutenberg delimiters.</p>]]></content:encoded>
+      <excerpt:encoded><![CDATA[]]></excerpt:encoded>
+      <wp:post_name>about</wp:post_name>
+      <wp:post_date>2024-05-03 09:00:00</wp:post_date>
+      <wp:status>publish</wp:status>
+      <wp:post_type>page</wp:post_type>
+    </item>
+
+    <item>
+      <title>Draft Post</title>
+      <link>https://example.com/draft-post/</link>
+      <pubDate>Sat, 04 May 2024 09:00:00 +0000</pubDate>
+      <dc:creator><![CDATA[admin]]></dc:creator>
+      <description></description>
+      <content:encoded><![CDATA[<p>This draft must be ignored.</p>]]></content:encoded>
+      <excerpt:encoded><![CDATA[]]></excerpt:encoded>
+      <wp:post_name>draft-post</wp:post_name>
+      <wp:post_date>2024-05-04 09:00:00</wp:post_date>
+      <wp:status>draft</wp:status>
+      <wp:post_type>post</wp:post_type>
+    </item>
+
+    <item>
+      <title>test.png</title>
+      <link>https://example.com/test-image/</link>
+      <wp:post_id>101</wp:post_id>
+      <wp:post_name>test-image</wp:post_name>
+      <wp:post_date>2024-05-01 09:00:00</wp:post_date>
+      <wp:status>inherit</wp:status>
+      <wp:post_type>attachment</wp:post_type>
+      <wp:attachment_url>__MEDIA_BASE_URL__/uploads/featured.png</wp:attachment_url>
+    </item>
+
+  </channel>
+</rss>

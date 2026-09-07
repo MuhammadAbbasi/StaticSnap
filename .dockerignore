@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+tests
+audit
+test_sites
+test-astro-out
+*.zip
+*.log
+Dockerfile
+.dockerignore
