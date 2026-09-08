@@ -41,13 +41,26 @@ Tick **Scan for leaked API keys & passwords** (Pro) to also run the secret-expos
 
 ---
 
-## Running locally
+## Run it your way
+
+Two options — same image, same dashboard. Pick the one that fits:
+
+| | **A. Local Docker** (free, private) | **B. Hosted service** (zero setup, partially paid) |
+|---|---|---|
+| Address | `http://localhost:3000` on your machine | `https://staticscan.muhammadabbasi.com` |
+| Start | `docker compose up --build` | Open the URL — no install |
+| Cost | Free forever, your hardware | Free tier for exports; **Pro** (secret scan) is paid |
+| Pro unlock | `STATICSNAP_PRO_ENABLED=1` in your `.env` | Subscription on the hosted service |
+
+### A. Running locally
 
 ```bash
-npm ci
-npm run build
-npm run serve            # http://localhost:3000
+cp .env.example .env   # optional — defaults work out of the box
+docker compose up --build
+# dashboard → http://localhost:3000
 ```
+
+No Docker? The classic path still works: `npm ci && npm run build && npm run serve`.
 
 To crawl a site on your own machine (`localhost`, `127.0.0.1`, a LAN address), you must opt out of the SSRF guard:
 
@@ -57,18 +70,31 @@ STATICSNAP_ALLOW_PRIVATE=1 npm run serve
 
 **Never set that in a public deployment** — see Security below.
 
-## Deploying
+### B. Using the hosted service
 
-**Current status: run it directly with Node.** `npm ci && npm run build && npm run serve` is the supported path while the app is being tested.
+Open **https://staticscan.muhammadabbasi.com** and export — landing + deep crawls and screenshots are free within the usual rate/size limits. The **Secret Scan** tab is a Pro feature: requesting it without a subscription is refused with an upgrade notice (`402 + upgradeRequired`).
 
-A `Dockerfile` is committed and ready for when you deploy, but it has **not been built or run yet** — there was no Docker daemon available in the environment where it was written. Treat it as a starting point and verify the first build:
+### Operating the hosted service (for the domain owner)
 
-```bash
-docker build -t staticsnap .
-docker run -p 3000:3000 -e STATICSNAP_ACCESS_TOKEN=... staticsnap
-```
+The hosted service is this same repo on a VPS, with Caddy terminating TLS:
 
-Serverless platforms are a poor fit either way: a deep crawl runs for minutes, holds an SSE connection open, and writes hundreds of megabytes to temp disk.
+1. **DNS** — add an `A` (and optionally `AAAA`) record: `staticscan.muhammadabbasi.com → <server IP>`.
+2. **Firewall** — open ports `80` and `443`.
+3. **Configure** — `cp .env.example .env`, then set:
+   ```ini
+   DOMAIN=staticscan.muhammadabbasi.com
+   STATICSNAP_DEPLOYMENT=cloud
+   STATICSNAP_PUBLIC_URL=https://staticscan.muhammadabbasi.com
+   STATICSNAP_BEHIND_PROXY=1
+   # leave STATICSNAP_PRO_ENABLED / STATICSNAP_SECRET_SCAN_ENABLED OFF
+   # so the secret scan stays a paid Pro feature (402 paywall active)
+   ```
+4. **Launch** — `docker compose --profile prod up -d --build`. Caddy fetches a Let's Encrypt certificate automatically on first request.
+5. **Verify** — `curl https://staticscan.muhammadabbasi.com/api/health` should report `"deployment":"cloud"`.
+
+`STATICSNAP_BEHIND_PROXY=1` (implied by `cloud`) makes per-IP rate limiting see real visitor IPs from `X-Forwarded-For` instead of throttling the whole service as one address. Job logs persist in the `staticsnap-logs` volume across container recreations.
+
+Serverless platforms are a poor fit either way: a deep crawl runs for minutes, holds an SSE connection open, and writes hundreds of megabytes to temp disk — use a small VPS.
 
 ### Configuration
 
@@ -89,6 +115,9 @@ Serverless platforms are a poor fit either way: a deep crawl runs for minutes, h
 | `STATICSNAP_MAX_SCREENSHOTS` | `360` | Cap on captures per job (pages × viewports) |
 | `STATICSNAP_PRO_ENABLED` | unset | **Subscribed tier.** `1` unlocks all Pro features (currently: secret scan) |
 | `STATICSNAP_SECRET_SCAN_ENABLED` | unset | Unlocks only the secret-exposure scan (`1` to enable) |
+| `STATICSNAP_DEPLOYMENT` | `selfhost` | `cloud` marks the hosted service (implies proxy trust, shown in dashboard footer) |
+| `STATICSNAP_PUBLIC_URL` | unset | e.g. `https://staticscan.muhammadabbasi.com` — shown in the dashboard footer + `/api/health` |
+| `STATICSNAP_BEHIND_PROXY` | unset | `1` trusts `X-Forwarded-For` for rate limiting (required behind Caddy/nginx) |
 
 ### Access control
 
@@ -139,7 +168,7 @@ Still worth adding for a sensitive network: an egress allowlist, so the crawler 
 | `GET /api/jobs/:jobId/secrets` | Redacted secret-exposure report (404 if not requested, 409 while running/failed, 402 if not Pro) |
 | `GET /api/download/:jobId` | The `.zip` bundle (live as soon as packed, even while screenshots render) |
 | `GET /api/download/:jobId/screenshots` | The separate screenshots `.zip` (404 if not requested, 409 while rendering) |
-| `GET /api/health` | Liveness + `{ pro, features: { secretScan } }` so the dashboard can render the locked Pro tab |
+| `GET /api/health` | Liveness + `{ pro, deployment, publicUrl, features: { secretScan } }` so the dashboard can render the locked Pro tab and hosted/self-hosted footer |
 
 ---
 
@@ -157,6 +186,7 @@ npm test              # unit + fidelity + e2e
 - `tests/offline-fidelity.test.mjs` — exports a site, **kills the origin**, then serves the unzipped bundle and asserts every page and reference still resolves
 - `tests/screenshots.test.mjs` — screenshot viewport helpers plus the screenshots API surface (no browser required)
 - `tests/secrets.test.mjs` — secret-pattern detection, placeholder rejection, and the no-raw-secret-leak guarantee (redacted excerpts only)
+- `tests/deployment.test.mjs` — health deployment contract + reverse-proxy trust
 - `tests/e2e.mjs` — the bundled `wp-to-astro` CLI, including an `astro build` of its output
 
 ---

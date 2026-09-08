@@ -1,0 +1,42 @@
+# StaticSnap hosted service — Caddy reverse proxy.
+#
+# DOMAIN defaults to the production host. Override for staging:
+#   DOMAIN=staging.example.com docker compose --profile prod up -d
+#
+# Caddy obtains and renews Let's Encrypt certificates automatically on first
+# request. Requirements: DNS for {$DOMAIN} must resolve to this host, and
+# ports 80 + 443 must be reachable from the internet.
+
+{$DOMAIN:staticscan.muhammadabbasi.com} {
+	# The dashboard + API are same-origin; no CORS relaxation needed.
+	reverse_proxy app:3000 {
+		# Fail fast to the live-reload-free upstream; the app has its own
+		# readiness probe via /api/health (see compose healthcheck).
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		health_uri /api/health
+		health_interval 30s
+		health_timeout 5s
+	}
+
+	encode gzip
+
+	# Harden responses; the bundle zips download with their own headers.
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# Never cache API + downloads at the edge; the dashboard is static and
+	# cheap to revalidate.
+	@nocache path /api/*
+	header @nocache Cache-Control "no-store"
+
+	log {
+		output stdout
+		format console
+	}
+}

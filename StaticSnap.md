@@ -83,7 +83,7 @@ The tab badge shows the finding count; the health check (`GET /api/health` → `
 | `GET /api/jobs/:jobId/secrets` | Redacted report `{ summary, findings[], disclaimer }` — 404 not requested, 409 running/failed, 402 not Pro |
 | `GET /api/download/:jobId` | Site `.zip` (live as soon as packed) |
 | `GET /api/download/:jobId/screenshots` | Screenshots `.zip` (404/409/410 semantics) |
-| `GET /api/health` | `{ ok, tokenRequired, pro, features: { secretScan } }` |
+| `GET /api/health` | `{ ok, tokenRequired, pro, deployment, publicUrl, features: { secretScan } }` |
 
 ---
 
@@ -101,9 +101,22 @@ The tab badge shows the finding count; the health check (`GET /api/health` → `
 | `STATICSNAP_ALLOW_PRIVATE` | unset | **Dev only** — allow loopback/LAN targets |
 | `STATICSNAP_PRO_ENABLED` | unset | Unlocks Pro tier (secret scan) |
 | `STATICSNAP_SECRET_SCAN_ENABLED` | unset | Unlocks only the secret scan |
+| `STATICSNAP_DEPLOYMENT` | `selfhost` | `cloud` marks the hosted service (implies proxy trust, footer badge) |
+| `STATICSNAP_PUBLIC_URL` | unset | e.g. `https://staticscan.muhammadabbasi.com` — dashboard footer + health |
+| `STATICSNAP_BEHIND_PROXY` | unset | `1` trusts `X-Forwarded-For` for rate limiting (required behind Caddy/nginx) |
 | `STATICSNAP_SCREENSHOT_TIMEOUT_MS` / `STATICSNAP_SCREENSHOT_CONCURRENCY` / `STATICSNAP_MAX_SCREENSHOTS` | `30000` / `2` / `360` | Screenshot budgets |
 
-Bundles live in the OS temp dir and are reaped 15 min after completion; startup sweeps orphaned `staticsnap-*` dirs older than an hour.
+Bundles live in the OS temp dir and are reaped 15 min after completion; startup sweeps orphaned `staticsnap-*` dirs older than an hour. In Docker, job logs persist in the `staticsnap-logs` volume.
+
+---
+
+## 6b. Deployment — local Docker vs hosted service
+
+The same image serves both. The dashboard footer tells the visitor which one they are on (and links to the other).
+
+**Option A — local Docker (free, private):** `cp .env.example .env`, then `docker compose up --build` → `http://localhost:3000`. Single container, no domain or TLS needed. Set `STATICSNAP_PRO_ENABLED=1` in `.env` to unlock the secret scan for everyone on the instance. Files: `Dockerfile` (multi-stage Debian — glibc for sharp; Playwright Chromium preinstalled; non-root `node` user; `/api/health` HEALTHCHECK), `docker-compose.yml` (app + log volume), `.env.example`.
+
+**Option B — hosted service at staticscan.muhammadabbasi.com (zero setup, partially paid):** exports and screenshots are free within rate/size limits; the secret scan is a paid Pro feature (refused with `402 + upgradeRequired` until subscribed). Operator setup: `A/AAAA` DNS → VPS, open 80/443, `.env` with `DOMAIN`, `STATICSNAP_DEPLOYMENT=cloud`, `STATICSNAP_PUBLIC_URL=https://staticscan.muhammadabbasi.com`, `STATICSNAP_BEHIND_PROXY=1`, Pro flags **off**, then `docker compose --profile prod up -d --build`. Caddy (`Caddyfile`) reverse-proxies to `app:3000` with automatic Let's Encrypt certificates, gzip, hardened headers, and `no-store` on `/api/*`. Cloud mode implies proxy trust so per-IP rate limiting sees real visitor IPs. Use a small VPS — serverless is a poor fit (long SSE connections, hundreds of MB of temp disk).
 
 ---
 
@@ -130,7 +143,8 @@ src/server/zipper.ts       streaming zip
 src/fetcher.ts             browser-profile HTTP client (keep-alive, decode, redirects)
 src/net-guard.ts           SSRF choke point
 src/extractor|transformer|scaffolder|media  wp-to-astro path
-tests/                     unit (srcset, terminal, ssrf, limits, screenshots, secrets)
+Dockerfile + docker-compose.yml + Caddyfile + .env.example  local vs hosted deployment
+tests/                     unit (srcset, terminal, ssrf, limits, screenshots, secrets, deployment)
                            + offline-fidelity (kill-origin proof) + e2e (astro build)
 ```
 
@@ -138,7 +152,7 @@ tests/                     unit (srcset, terminal, ssrf, limits, screenshots, se
 
 ## 9. Tiers (roadmap status)
 
-Per `docs/future-roadmap-and-monetization.md`: Free ($0, capped crawl, manual download, community support) → **Pro ($10/mo: full sitemaps, headless rendering, 24 h retention, priority queue — the secret scan ships in this tier)** → Developer ($25/mo: framework outputs, 1-click deploy, priority support). Billing (Supabase/Clerk + Stripe) is **not yet implemented**; env flags stand in for entitlement checks, with `402 + upgradeRequired` already wired as the paywall signal.
+Per `docs/future-roadmap-and-monetization.md`: Free ($0, capped crawl, manual download, community support) → **Pro ($10/mo: full sitemaps, headless rendering, 24 h retention, priority queue — the secret scan ships in this tier)** → Developer ($25/mo: framework outputs, 1-click deploy, priority support). The hosted service at staticscan.muhammadabbasi.com already enforces the split (exports free, secret scan paywalled with `402 + upgradeRequired`); env flags stand in for entitlement checks until per-user billing (Supabase/Clerk + Stripe) lands.
 
 ---
 

@@ -374,7 +374,8 @@
     </div>
 
     <footer class="mt-8 border-t border-slate-200 pt-4 text-center text-xs text-slate-400 dark:border-slate-800">
-      StaticSnap · crawler respects remote hosts with timeouts, retries &amp; concurrency limits · bundles expire after 15 min
+      <div id="deployLine" class="mb-1 font-medium">StaticSnap · self-hosted instance</div>
+      <div>StaticSnap · crawler respects remote hosts with timeouts, retries &amp; concurrency limits · bundles expire after 15 min</div>
     </footer>
   </main>
 
@@ -1081,9 +1082,36 @@
   });
 
   /* ---------- health ---------- */
+  var HOSTED_URL = 'https://staticscan.muhammadabbasi.com';
+  var REPO_URL = 'https://github.com/MuhammadAbbasi/StaticSnap';
+  function renderDeployLine(body) {
+    var line = $('deployLine');
+    if (!line) return;
+    line.innerHTML = '';
+    function link(href, text) {
+      var a = document.createElement('a');
+      a.href = href;
+      a.textContent = text;
+      a.className = 'underline underline-offset-2 hover:text-cyan-500';
+      if (/^https?:\/\//.test(href)) { a.target = '_blank'; a.rel = 'noopener'; }
+      return a;
+    }
+    function txt(s) { line.appendChild(document.createTextNode(s)); }
+    var url = body && body.publicUrl;
+    if (url) {
+      txt('Hosted service · ');
+      line.appendChild(link(url, String(url).replace(/^https?:\/\//, '')));
+      txt(' · Free tier — Pro unlocks the secret scan · Run your own: ');
+      line.appendChild(link(REPO_URL, 'Docker self-host'));
+    } else {
+      txt('Self-hosted instance · Prefer zero setup? Try the hosted service at ');
+      line.appendChild(link(HOSTED_URL, 'staticscan.muhammadabbasi.com'));
+    }
+  }
   fetch('/api/health').then(function (r) { return r.json(); }).then(function (body) {
     $('healthDot').className = 'h-2 w-2 rounded-full bg-emerald-400';
     $('healthText').textContent = 'api online' + (body && body.pro ? ' · pro' : '');
+    renderDeployLine(body);
     var available = !!(body && ((body.features && body.features.secretScan) || body.pro));
     state.secretScanAvailable = available;
     $('secretsLockNote').classList.toggle('hidden', available);

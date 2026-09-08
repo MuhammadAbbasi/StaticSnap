@@ -15,10 +15,13 @@
     "typecheck": "tsc --noEmit",
     "start": "node ./dist/cli.js",
     "test:e2e": "node ./tests/e2e.mjs",
-    "test:unit": "node ./tests/srcset.test.mjs && node ./tests/terminal.test.mjs && node ./tests/ssrf.test.mjs && node ./tests/limits.test.mjs && node ./tests/screenshots.test.mjs && node ./tests/secrets.test.mjs",
+    "test:unit": "node ./tests/srcset.test.mjs && node ./tests/terminal.test.mjs && node ./tests/ssrf.test.mjs && node ./tests/limits.test.mjs && node ./tests/screenshots.test.mjs && node ./tests/secrets.test.mjs && node ./tests/deployment.test.mjs",
     "test": "npm run test:unit && npm run test:fidelity && npm run test:e2e",
     "test:fidelity": "node ./tests/offline-fidelity.test.mjs",
-    "test:screenshots": "node ./tests/screenshots.test.mjs"
+    "test:screenshots": "node ./tests/screenshots.test.mjs",
+    "docker:build": "docker build -t staticsnap .",
+    "docker:up": "docker compose up --build",
+    "docker:up:prod": "docker compose --profile prod up -d --build"
   },
   "keywords": [
     "wordpress",

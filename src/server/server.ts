@@ -87,6 +87,30 @@ function rateLimited(ip: string): boolean {
   return false;
 }
 
+/**
+ * Where this instance runs: `selfhost` (local Docker / own server) or `cloud`
+ * (the hosted service at staticscan.muhammadabbasi.com). Read dynamically so
+ * tests and long-lived processes pick up env changes without a restart.
+ */
+export function deploymentMode(): "selfhost" | "cloud" {
+  return (process.env.STATICSNAP_DEPLOYMENT ?? "").trim().toLowerCase() === "cloud"
+    ? "cloud"
+    : "selfhost";
+}
+
+/** Public base URL of this instance, e.g. https://staticscan.muhammadabbasi.com. */
+export function publicUrl(): string | null {
+  const raw = (process.env.STATICSNAP_PUBLIC_URL ?? "").trim().replace(/\/+$/, "");
+  if (!/^https?:\/\/.+\..+/.test(raw)) return null;
+  return raw;
+}
+
+function behindProxy(): boolean {
+  if (deploymentMode() === "cloud") return true;
+  const raw = (process.env.STATICSNAP_BEHIND_PROXY ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -109,6 +133,11 @@ const CreateJobSchema = z.object({
 export function createApp(): express.Express {
   const app = express();
 
+  // Behind Caddy/nginx the client IP arrives via X-Forwarded-For. Trusting
+  // one proxy hop makes per-IP rate limiting see real visitors instead of
+  // the proxy address. Only enabled when explicitly configured (or cloud).
+  if (behindProxy()) app.set("trust proxy", 1);
+
   app.use(cors());
   app.use(express.json({ limit: "64kb" }));
   app.disable("x-powered-by");
@@ -120,6 +149,8 @@ export function createApp(): express.Express {
       time: new Date().toISOString(),
       tokenRequired: ACCESS_TOKEN.length > 0,
       pro: isProEnabled(),
+      deployment: deploymentMode(),
+      publicUrl: publicUrl(),
       features: { secretScan: isSecretScanAvailable() },
     });
   });
